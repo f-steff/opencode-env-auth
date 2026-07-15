@@ -29,25 +29,32 @@ function envAuthPlugin(providerID, provider) {
   const envVars = (Array.isArray(rawEnvVars) ? rawEnvVars : [rawEnvVars]).filter(Boolean)
 
   return async function OpenCodeEnvAuthPlugin() {
+    // Only offer an environment-based auth method when one of the provider's
+    // configured variables is actually set. If none is set we must register no
+    // auth method at all: registering one would override OpenCode's normal
+    // "paste your API key" flow and then fail when selected, because there is
+    // no key to inject.
+    const match = envVars.find((envVar) => process.env[envVar])
+    if (!match) return {}
+
     return {
       auth: {
         provider: providerID,
         methods: [
           {
             type: "oauth",
-            label: envVars.length === 1 ? `Use ${envVars[0]}` : "Use environment API key",
+            label: `Use ${match}`,
             authorize: async () => {
-              const match = envVars.find((envVar) => process.env[envVar])
-
               return {
-                url: match ? `env:${match}` : `env:${envVars.join("|")}`,
+                url: `env:${match}`,
                 method: "auto",
-                instructions: match
-                  ? `Using ${match} from the environment.`
-                  : `Set one of these environment variables: ${envVars.join(", ")}`,
+                instructions: `Using ${match} from the environment.`,
                 callback: async () => {
-                  if (!match) return { type: "failed" }
-                  return { type: "success", key: process.env[match] }
+                  // Re-read at selection time in case the variable was unset
+                  // after startup.
+                  const key = process.env[match]
+                  if (!key) return { type: "failed" }
+                  return { type: "success", key }
                 },
               }
             },
